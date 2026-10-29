@@ -57,24 +57,32 @@ else
   fail "playwright-cli (npm install -g @playwright/cli)"
 fi
 
-# Memory skill: one shared store at ~/.claude/memory for all three agents.
-if [[ -f "$HERE/mem/SKILL.md" ]]; then
-  info "Memory skill (mem)"
-  for dir in "$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.gemini/skills"; do
-    # Claude Code may already have it as a /mem command.
-    [[ "$dir" == "$HOME/.claude/skills" && -e "$HOME/.claude/commands/mem.md" ]] && continue
-    mkdir -p "$dir/mem" && install -m 644 "$HERE/mem/SKILL.md" "$dir/mem/SKILL.md"
+# Memory skill (github.com/hanfang/claude-memory-skill): one shared store at
+# ~/.claude/memory. Its installer sets up Claude Code (/mem command, memory
+# templates, CLAUDE.md hook); Codex and Gemini get the same mem.md as a skill.
+info "Memory skill (claude-memory-skill)"
+memdir="$(mktemp -d)"
+if git clone --depth 1 -q https://github.com/hanfang/claude-memory-skill.git "$memdir" &&
+   bash "$memdir/install.sh" >/dev/null; then
+  for dir in "$HOME/.agents/skills/mem" "$HOME/.gemini/skills/mem"; do
+    mkdir -p "$dir"
+    {
+      printf -- '---\nname: mem\ndescription: %s\n---\n\n' \
+        'Persistent hierarchical memory at ~/.claude/memory, shared with Claude Code. Load it at session start, save worthwhile learnings, recall past context when stuck or when the user says "remember".'
+      cat "$memdir/skill/mem.md"
+      printf '\n## Agents without background subagents\n\n%s\n' \
+        'The Task(...) blocks above are for Claude Code. Without a background-agent tool, do the same steps directly with file reads and writes.'
+    } >"$dir/SKILL.md"
   done
-  mkdir -p "$HOME/.claude/memory/topics" "$HOME/.claude/memory/projects"
-  cp -n "$HERE/memory-template/core.md" "$HERE/memory-template/me.md" "$HOME/.claude/memory/"
-  for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.gemini/GEMINI.md"; do
+  for f in "$HOME/.codex/AGENTS.md" "$HOME/.gemini/GEMINI.md"; do
     mkdir -p "$(dirname "$f")"
     grep -qs '\.claude/memory' "$f" || cat "$HERE/memory-instructions.md" >>"$f"
   done
-  ok "mem skill and ~/.claude/memory ready"
+  ok "mem: Claude Code (/mem), Codex and Gemini CLI share ~/.claude/memory"
 else
-  warn "agents/mem/SKILL.md not bundled; skipping memory skill"
+  fail "claude-memory-skill (github.com/hanfang/claude-memory-skill)"
 fi
+rm -rf "$memdir"
 
 # REA's own setup registers the MCP server and its skill per agent. It is an
 # interactive picker, so give it the terminal directly rather than the log pipe.

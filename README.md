@@ -19,7 +19,8 @@ Post-install setup script for CachyOS/Arch Linux.
 - Gemini CLI, plus agent skills for Claude Code, Codex and Gemini CLI via
   `agents/install.sh` (both scripts): taste-skill (+ classics), imagegen-skills
   (image-to-code), Vercel web-design-guidelines, awesome-design, playwright-cli,
-  the `mem` memory skill, and REA (`rea-agents setup`)
+  the `mem` memory skill ([claude-memory-skill](https://github.com/hanfang/claude-memory-skill),
+  shared by all three agents), and REA (`rea-agents setup`)
 - Laptop AI stack: PyTorch for Intel GPUs (`python-pytorch-opt-xpu`),
   OpenVINO with GPU/NPU plugins, Ollama Vulkan backend, Hugging Face and
   data-science libraries, plus a `~/.venvs/ai` venv (accelerate, diffusers,
