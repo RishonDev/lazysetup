@@ -1,0 +1,13 @@
+[Unit]
+Description=Face-aware webcam enhancer (virtual camera on /dev/video10)
+After=systemd-modules-load.service systemd-udevd.service
+
+[Service]
+User=@USER@
+SupplementaryGroups=camraw video
+ExecStart=/usr/bin/python3 -I @HOME@/.local/share/camfix/camfix.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

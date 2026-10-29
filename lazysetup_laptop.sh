@@ -1,77 +1,115 @@
 #!/usr/bin/env bash
-# CachyOS post-install setup
-# Save as: cachyos-setup.sh
-# Run: chmod +x cachyos-setup.sh && ./cachyos-setup.sh
+# CachyOS post-install setup (laptop)
+# Run: chmod +x lazysetup_laptop.sh && ./lazysetup_laptop.sh
 
 set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG="$HOME/cachyos-setup-$(date +%F-%H%M%S).log"
 FAILED=()
 AUR_PACKAGES=(
   jetbrains-toolbox
   android-studio
-  intel-npu-driver
-  manjaro-zsh-config
+  hopper4
+  howdy
+  jdk25-graalvm-ce-bin
+  liberica-nik-23-full-bin
 )
 
-exec > >(tee -a "$LOG") 2>&1
+# Colours only on a real terminal; respect NO_COLOR (https://no-color.org).
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  BOLD=$'\033[1m' DIM=$'\033[2m' RESET=$'\033[0m'
+  RED=$'\033[1;31m' GREEN=$'\033[1;32m' YELLOW=$'\033[1;33m'
+  BLUE=$'\033[1;34m' CYAN=$'\033[1;36m'
+else
+  BOLD='' DIM='' RESET='' RED='' GREEN='' YELLOW='' BLUE='' CYAN=''
+fi
 
-section() {
-  printf '\n\033[1;36m==> %s\033[0m\n' "$*"
+# Screen gets colour; the log gets the same text with escape codes stripped.
+exec > >(tee >(sed -u 's/\x1b\[[0-9;]*m//g' >>"$LOG")) 2>&1
+
+# Top-level steps are the `step` calls at column 0 of this file.
+TOTAL_STEPS=$(grep -c '^step ' "${BASH_SOURCE[0]}")
+STEP=0
+START_TIME=$SECONDS
+STEP_START=$SECONDS
+
+step() {
+  local elapsed=$((SECONDS - STEP_START))
+  ((STEP > 0)) && printf '%s   done in %ds%s\n' "$DIM" "$elapsed" "$RESET"
+  STEP=$((STEP + 1))
+  STEP_START=$SECONDS
+  local pct=$((STEP * 100 / TOTAL_STEPS)) width=24
+  local filled=$((pct * width / 100)) bar rest
+  printf -v bar '%*s' "$filled" ''
+  printf -v rest '%*s' $((width - filled)) ''
+  printf '\n%s[%d/%d]%s %s%s%s\n' "$BLUE" "$STEP" "$TOTAL_STEPS" "$RESET" "$BOLD$CYAN" "$*" "$RESET"
+  printf '%s%s%s%s %3d%%\n' "$GREEN" "${bar// /█}" "$DIM${rest// /░}" "$RESET" "$pct"
+}
+
+info() { printf '%s  •%s %s\n' "$BLUE" "$RESET" "$*"; }
+ok()   { printf '%s  ✓%s %s\n' "$GREEN" "$RESET" "$*"; }
+warn() { printf '%s  !%s %s\n' "$YELLOW" "$RESET" "$*"; }
+fail() { printf '%s  ✗%s %s\n' "$RED" "$RESET" "$1"; FAILED+=("${2:-$1}"); }
+
+ask() {
+  local answer
+  read -r -p "${YELLOW}  ?${RESET} $1 " answer
+  [[ "$answer" =~ ^[Yy]$ ]]
 }
 
 install_repo() {
-  local pkg
+  local pkg i=0
   for pkg in "$@"; do
-    section "Installing repository package: $pkg"
+    i=$((i + 1))
+    printf '%s  (%d/%d)%s installing %s%s%s\n' "$DIM" "$i" "$#" "$RESET" "$BOLD" "$pkg" "$RESET"
     if sudo pacman -S --needed --noconfirm "$pkg"; then
-      echo "OK: $pkg"
+      ok "$pkg"
     else
-      echo "FAILED: $pkg"
-      FAILED+=("$pkg")
+      fail "$pkg"
     fi
   done
 }
 
 install_aur() {
-  local pkg
+  local pkg i=0
   for pkg in "$@"; do
-    section "Installing AUR package: $pkg"
-    if paru -S --needed "$pkg"; then
-      echo "OK: $pkg"
+    i=$((i + 1))
+    printf '%s  (%d/%d)%s installing %s%s%s from AUR\n' "$DIM" "$i" "$#" "$RESET" "$BOLD" "$pkg" "$RESET"
+    if "$AUR_HELPER" -S --needed "$pkg"; then
+      ok "$pkg"
     else
-      echo "FAILED: $pkg"
-      FAILED+=("$pkg")
+      fail "$pkg (failed or unavailable in AUR)" "$pkg"
     fi
   done
 }
 
 if [[ ! -f /etc/arch-release ]]; then
-  echo "This script is intended for CachyOS/Arch Linux."
+  echo "${RED}This script is intended for CachyOS/Arch Linux.${RESET}"
   exit 1
 fi
 
 if [[ $EUID -eq 0 ]]; then
-  echo "Run this script as your normal user, not with sudo."
+  echo "${RED}Run this script as your normal user, not with sudo.${RESET}"
   exit 1
 fi
 
 if ! command -v sudo >/dev/null 2>&1; then
-  echo "sudo is required."
+  echo "${RED}sudo is required.${RESET}"
   exit 1
 fi
 
-echo "Log file: $LOG"
-echo "This setup can install large packages and update your system."
-read -r -p "Continue? [y/N] " answer
-[[ "$answer" =~ ^[Yy]$ ]] || exit 0
+printf '%s%slazysetup%s — CachyOS laptop bootstrap\n' "$BOLD" "$CYAN" "$RESET"
+info "Log file: $LOG"
+info "$TOTAL_STEPS steps. This can install large packages and update your system."
+ask "Continue? [y/N]" || exit 0
 
-section "Update system"
+step "Update system"
 sudo pacman -Syu || {
-  echo "System update failed. Resolve that before continuing."
+  echo "${RED}System update failed. Resolve that before continuing.${RESET}"
   exit 1
 }
 
-section "Development essentials and shell"
+step "Development essentials and shell"
 install_repo \
   base-devel git curl wget unzip zip p7zip \
   openssh github-cli \
@@ -80,156 +118,226 @@ install_repo \
   ripgrep fd fzf wl-clipboard xclip \
   flatpak
 
-section "Wine and Windows compatibility"
+step "Wine and Windows compatibility"
 install_repo wine wine-mono wine-gecko winetricks
 
-section "Virtualization: QEMU and libvirt"
+step "Virtualization: QEMU and libvirt"
 install_repo \
   qemu-desktop virt-manager virt-viewer \
   dnsmasq vde2 edk2-ovmf swtpm
 
-section "HP printing support"
+step "HP printing support"
 install_repo \
   hplip cups system-config-printer \
   print-manager avahi usbutils
 
-section "Graphics, gaming and desktop apps"
-install_repo krita prismlauncher ollama
+step "Graphics, gaming and desktop apps"
+install_repo krita prismlauncher ollama intel-npu-driver
 
-section "Enable Flatpak and Flathub"
+step "Enable Flatpak and Flathub"
 if sudo flatpak remote-add --system --if-not-exists flathub \
   https://flathub.org/repo/flathub.flatpakrepo; then
-  echo "Flathub configured."
+  ok "Flathub configured"
 else
-  FAILED+=(flathub-setup)
+  fail "Flathub setup" flathub-setup
 fi
 
-section "Install Bottles and ZapZap from Flathub"
+step "Install Bottles and ZapZap from Flathub"
 for app in com.usebottles.bottles com.rtosta.zapzap; do
   if flatpak install --system --noninteractive flathub "$app"; then
-    echo "OK: $app"
+    ok "$app"
   else
-    echo "FAILED: $app"
-    FAILED+=("$app")
+    fail "$app"
   fi
 done
 
-section "Enable services"
-sudo systemctl enable --now sshd.service || FAILED+=(sshd-service)
-sudo systemctl enable --now cups.service || FAILED+=(cups-service)
-sudo systemctl enable --now avahi-daemon.service || FAILED+=(avahi-service)
-sudo systemctl enable --now libvirtd.service || FAILED+=(libvirtd-service)
-
-section "Add current user to virtualization group"
-if getent group libvirt >/dev/null; then
-  sudo usermod -aG libvirt "$USER"
-fi
-
-section "Install or locate paru (AUR helper)"
-if ! command -v paru >/dev/null 2>&1; then
-  if command -v yay >/dev/null 2>&1; then
-    echo "yay is available; using it instead of paru."
-    AUR_HELPER=yay
+step "Enable services"
+for svc in sshd cups avahi-daemon libvirtd; do
+  if sudo systemctl enable --now "$svc.service"; then
+    ok "$svc"
   else
-    echo "Building paru from the AUR."
-    tmpdir="$(mktemp -d)"
-    if git clone https://aur.archlinux.org/paru.git "$tmpdir/paru"; then
-      (
-        cd "$tmpdir/paru"
-        makepkg -si
-      ) || FAILED+=(paru-bootstrap)
-    else
-      FAILED+=(paru-clone)
-    fi
-    rm -rf "$tmpdir"
+    fail "$svc service" "$svc-service"
   fi
+done
+
+step "Add current user to virtualization group"
+if getent group libvirt >/dev/null && sudo usermod -aG libvirt "$USER"; then
+  ok "$USER added to libvirt"
+else
+  warn "libvirt group not available; skipped"
 fi
 
+step "ASUS webcam enhancer (camfix)"
+# Vivobook FHD webcam (Sonix 3277:0018): camfix reads the raw camera and serves
+# a face-exposed, BT.709-corrected "ASUS Webcam (Enhanced)" virtual camera.
+# python-opencv/python-numpy are not in a stock CachyOS install.
+if lsusb -d 3277:0018 >/dev/null 2>&1; then
+  read -r -p "${YELLOW}  ?${RESET} Install camfix and make the enhanced webcam the default? [Y/n] " answer
+  if [[ ! "$answer" =~ ^[Nn]$ ]]; then
+    install_repo python-opencv python-numpy ffmpeg v4l-utils
+    modinfo v4l2loopback >/dev/null 2>&1 || install_repo v4l2loopback-dkms
+
+    mkdir -p "$HOME/.local/share/camfix" "$HOME/.config/wireplumber/wireplumber.conf.d"
+    install -m 755 "$SCRIPT_DIR/camfix/camfix.py" "$HOME/.local/share/camfix/camfix.py"
+    install -m 644 "$SCRIPT_DIR/camfix/50-camfix.conf" "$HOME/.config/wireplumber/wireplumber.conf.d/"
+
+    getent group camraw >/dev/null || sudo groupadd -r camraw
+    sudo install -m 644 "$SCRIPT_DIR/camfix/v4l2loopback.conf" /etc/modprobe.d/camfix.conf
+    echo v4l2loopback | sudo tee /etc/modules-load.d/camfix.conf >/dev/null
+    sudo install -m 644 "$SCRIPT_DIR/camfix/99-asus-webcam.rules" "$SCRIPT_DIR/camfix/71-camfix-hide.rules" /etc/udev/rules.d/
+    sed -e "s#@USER@#$USER#" -e "s#@HOME@#$HOME#" "$SCRIPT_DIR/camfix/camfix.service" |
+      sudo tee /etc/systemd/system/camfix.service >/dev/null
+
+    if sudo modprobe v4l2loopback &&
+       sudo systemctl daemon-reload &&
+       sudo systemctl enable --now camfix.service; then
+      sudo udevadm control --reload
+      sudo udevadm trigger --subsystem-match=video4linux --subsystem-match=media
+      # Drop the seat ACL the user already holds on the raw camera nodes.
+      for dev in /dev/video* /dev/media*; do
+        udevadm info -q property "$dev" 2>/dev/null | grep -q '^ID_VENDOR_ID=3277' &&
+          sudo setfacl -b "$dev"
+      done
+      systemctl --user restart wireplumber 2>/dev/null || true
+      ok "camfix installed: pick 'ASUS Webcam (Enhanced)' if an app doesn't default to it"
+    else
+      fail "camfix service" camfix
+    fi
+  else
+    warn "camfix skipped"
+  fi
+else
+  info "ASUS FHD webcam not found. Skipping camfix."
+fi
+
+step "Install or locate AUR helper"
 if command -v paru >/dev/null 2>&1; then
   AUR_HELPER=paru
 elif command -v yay >/dev/null 2>&1; then
   AUR_HELPER=yay
-fi
-
-if [[ -n "${AUR_HELPER:-}" ]]; then
-  section "Install AUR applications"
-  for pkg in "${AUR_PACKAGES[@]}"; do
-    if "$AUR_HELPER" -S --needed "$pkg"; then
-      echo "OK: $pkg"
-    else
-      echo "FAILED or unavailable in AUR: $pkg"
-      FAILED+=("$pkg")
-    fi
-  done
 else
-  echo "No AUR helper available. Skipping AUR packages."
-  FAILED+=(aur-packages-skipped)
+  info "Building paru from the AUR"
+  tmpdir="$(mktemp -d)"
+  if git clone https://aur.archlinux.org/paru.git "$tmpdir/paru"; then
+    (
+      cd "$tmpdir/paru"
+      makepkg -si
+    ) || fail "paru build" paru-bootstrap
+  else
+    fail "paru clone" paru-clone
+  fi
+  rm -rf "$tmpdir"
+  command -v paru >/dev/null 2>&1 && AUR_HELPER=paru
+fi
+if [[ -n "${AUR_HELPER:-}" ]]; then
+  ok "Using $AUR_HELPER"
 fi
 
-section "Install Claude Code"
+step "Install AUR applications"
+if [[ -n "${AUR_HELPER:-}" ]]; then
+  install_aur "${AUR_PACKAGES[@]}"
+else
+  fail "No AUR helper available; skipped AUR packages" aur-packages-skipped
+fi
+
+step "Zsh configuration (bundled manjaro-zsh-config)"
+# manjaro-zsh-config was removed from the AUR. zsh/manjaro-zsh-config.zip is a
+# snapshot of github.com/RishonDev/manjaro-zsh-config; its install.sh builds
+# the font, powerlevel10k theme and config from their PKGBUILDs, in order.
+install_repo \
+  zsh-autosuggestions zsh-syntax-highlighting \
+  zsh-history-substring-search pkgfile
+if pacman -Q manjaro-zsh-config >/dev/null 2>&1; then
+  ok "manjaro-zsh-config package already installed"
+else
+  tmpdir="$(mktemp -d)"
+  if bsdtar -xf "$SCRIPT_DIR/zsh/manjaro-zsh-config.zip" -C "$tmpdir" &&
+     bash "$tmpdir/install.sh"; then
+    ok "manjaro-zsh-config installed"
+  else
+    fail "manjaro-zsh-config installer" zsh-config
+  fi
+  rm -rf "$tmpdir"
+fi
+if [[ ! -e "$HOME/.zshrc" ]]; then
+  cp /etc/skel/.zshrc "$HOME/.zshrc" && ok "Created ~/.zshrc"
+else
+  info "Keeping existing ~/.zshrc"
+fi
+
+step "Install Claude Code"
 if command -v claude >/dev/null 2>&1; then
-  echo "Claude Code already installed."
+  ok "Claude Code already installed"
 else
   tmpfile="$(mktemp)"
   if curl -fsSL https://claude.ai/install.sh -o "$tmpfile" &&
      bash "$tmpfile"; then
-    echo "Claude Code installer completed."
+    ok "Claude Code installed"
   else
-    echo "Claude Code installation failed."
-    FAILED+=(claude-code)
+    fail "Claude Code installation" claude-code
   fi
   rm -f "$tmpfile"
 fi
 
-section "Install OpenAI Codex CLI"
+step "Install OpenAI Codex CLI"
 if command -v codex >/dev/null 2>&1; then
-  echo "Codex already installed."
+  ok "Codex already installed"
 elif sudo pacman -S --needed --noconfirm npm &&
      sudo npm install -g @openai/codex; then
-  echo "Codex CLI installed."
+  ok "Codex CLI installed"
 else
-  echo "Codex installation failed."
-  FAILED+=(codex-cli)
+  fail "Codex installation" codex-cli
 fi
 
-section "LazyVim setup"
+step "LazyVim setup"
 if [[ -d "$HOME/.config/nvim" ]]; then
   backup="$HOME/.config/nvim.backup-$(date +%F-%H%M%S)"
-  echo "Existing Neovim config found."
-  read -r -p "Back it up and install LazyVim? [y/N] " answer
-  if [[ "$answer" =~ ^[Yy]$ ]]; then
+  warn "Existing Neovim config found"
+  if ask "Back it up and install LazyVim? [y/N]"; then
     mv "$HOME/.config/nvim" "$backup"
     [[ ! -d "$HOME/.local/share/nvim" ]] ||
       mv "$HOME/.local/share/nvim" "$backup-data"
-    git clone https://github.com/LazyVim/starter "$HOME/.config/nvim" ||
-      FAILED+=(lazyvim)
-    rm -rf "$HOME/.config/nvim/.git"
-    echo "Config backup: $backup"
+    if git clone https://github.com/LazyVim/starter "$HOME/.config/nvim"; then
+      rm -rf "$HOME/.config/nvim/.git"
+      ok "LazyVim installed"
+    else
+      fail "LazyVim clone" lazyvim
+    fi
+    info "Config backup: $backup"
   else
-    echo "Skipping LazyVim to preserve your configuration."
+    info "Skipping LazyVim to preserve your configuration"
+  fi
+elif git clone https://github.com/LazyVim/starter "$HOME/.config/nvim"; then
+  rm -rf "$HOME/.config/nvim/.git"
+  ok "LazyVim installed"
+else
+  fail "LazyVim clone" lazyvim
+fi
+
+step "Ollama service"
+if ask "Enable Ollama on boot and start it now? [y/N]"; then
+  if sudo systemctl enable --now ollama.service; then
+    ok "Ollama enabled"
+  else
+    fail "Ollama service" ollama-service
   fi
 else
-  git clone https://github.com/LazyVim/starter "$HOME/.config/nvim" &&
-    rm -rf "$HOME/.config/nvim/.git" || FAILED+=(lazyvim)
+  info "Ollama left disabled"
 fi
 
-section "Ollama service"
-read -r -p "Enable Ollama on boot and start it now? [y/N] " answer
-if [[ "$answer" =~ ^[Yy]$ ]]; then
-  sudo systemctl enable --now ollama.service || FAILED+=(ollama-service)
-fi
-
-section "Final report"
+step "Final report"
+total=$((SECONDS - START_TIME))
+printf '  Finished in %dm %02ds\n' $((total / 60)) $((total % 60))
 if ((${#FAILED[@]})); then
-  echo "Some items failed or need manual attention:"
-  printf ' - %s\n' "${FAILED[@]}"
-  echo "Check the log: $LOG"
+  printf '%s  %d item(s) failed or need manual attention:%s\n' "$RED" "${#FAILED[@]}" "$RESET"
+  printf "${RED}   - %s${RESET}\n" "${FAILED[@]}"
+  info "Check the log: $LOG"
 else
-  echo "All requested installation steps completed."
+  printf '%s  All requested installation steps completed.%s\n' "$GREEN" "$RESET"
 fi
 
 echo
-echo "Next steps:"
+printf '%sNext steps:%s\n' "$BOLD" "$RESET"
 echo "1. Reboot or log out and back in."
 echo "2. Run 'hp-setup -u' to configure your HP printer."
 echo "3. Open JetBrains Toolbox and install your IDEs."
@@ -238,4 +346,4 @@ echo "5. Run 'ollama pull <model>' to download an AI model."
 echo "6. Check Intel NPU compatibility for your CPU and kernel."
 echo "7. Authenticate Claude Code and Codex when prompted."
 echo
-echo "Log saved to: $LOG"
+info "Log saved to: $LOG"

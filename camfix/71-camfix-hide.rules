@@ -1,0 +1,4 @@
+# Hide the raw ASUS webcam + IR sensor from desktop apps so they pick the
+# camfix virtual camera. Only group camraw (the camfix service) can open them.
+# Must sort before 73-seat-late.rules, which grants the logged-in user an ACL.
+SUBSYSTEM=="video4linux|media", ATTRS{idVendor}=="3277", ATTRS{idProduct}=="0018", GROUP="camraw", MODE="0660", TAG-="uaccess"

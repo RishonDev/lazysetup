@@ -1,0 +1,1 @@
+ACTION=="add", SUBSYSTEM=="video4linux", ATTRS{idVendor}=="3277", ATTRS{idProduct}=="0018", ATTR{index}=="0", RUN+="/usr/bin/v4l2-ctl -d $devnode -c backlight_compensation=2,gamma=130,exposure_dynamic_framerate=0"
