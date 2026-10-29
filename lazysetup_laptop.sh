@@ -360,11 +360,11 @@ else
   fi
   rm -rf "$tmpdir"
 fi
-if [[ ! -e "$HOME/.zshrc" ]]; then
-  cp /etc/skel/.zshrc "$HOME/.zshrc" && ok "Created ~/.zshrc"
-else
-  info "Keeping existing ~/.zshrc"
+if [[ -e "$HOME/.zshrc" ]] && ! cmp -s "$SCRIPT_DIR/zsh/.zshrc" "$HOME/.zshrc"; then
+  backup="$HOME/.zshrc.backup-$(date +%F-%H%M%S)"
+  cp "$HOME/.zshrc" "$backup" && info "Existing ~/.zshrc backed up to $backup"
 fi
+install -m 644 "$SCRIPT_DIR/zsh/.zshrc" "$HOME/.zshrc" && ok "Installed bundled ~/.zshrc"
 
 step "Install Claude Code"
 if command -v claude >/dev/null 2>&1; then
