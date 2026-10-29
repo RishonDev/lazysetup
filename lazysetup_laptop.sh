@@ -10,7 +10,7 @@ AUR_PACKAGES=(
   jetbrains-toolbox
   android-studio
   hopper4
-  howdy
+  howdy-git
   jdk25-graalvm-ce-bin
   liberica-nik-23-full-bin
 )
@@ -235,6 +235,34 @@ install_repo \
 step "Graphics, gaming and desktop apps"
 install_repo krita prismlauncher ollama intel-npu-driver
 
+step "AI: PyTorch (Intel XPU), OpenVINO and tools"
+# Intel Arc iGPU + NPU. PyTorch's XPU build comes from the official repos; it
+# runs on the Level Zero / compute runtime CachyOS already ships.
+install_repo \
+  python-pytorch-opt-xpu python-torchvision \
+  openvino openvino-intel-gpu-plugin openvino-intel-npu-plugin python-openvino \
+  ollama-vulkan intel-gpu-tools uv \
+  python-transformers python-huggingface-hub python-datasets python-safetensors \
+  python-tokenizers python-sentencepiece python-scikit-learn python-pandas \
+  python-matplotlib jupyterlab python-ipykernel
+# Libraries not packaged for Arch go in a venv that reuses the system PyTorch,
+# so pip does not pull a second, CPU-only torch.
+AI_VENV="$HOME/.venvs/ai"
+if [[ -x "$AI_VENV/bin/python" ]] || uv venv --system-site-packages "$AI_VENV"; then
+  if uv pip install --python "$AI_VENV/bin/python" accelerate diffusers peft timm einops; then
+    ok "Python AI venv: $AI_VENV (activate: source $AI_VENV/bin/activate)"
+  else
+    fail "pip packages in $AI_VENV" ai-venv
+  fi
+else
+  fail "Creating $AI_VENV" ai-venv
+fi
+if python3 -c 'import torch, sys; sys.exit(0 if torch.xpu.is_available() else 1)' 2>/dev/null; then
+  ok "PyTorch sees the Intel GPU (torch.xpu)"
+else
+  warn "PyTorch XPU not available yet; reboot, then check: python -c 'import torch; print(torch.xpu.is_available())'"
+fi
+
 step "Enable Flatpak and Flathub"
 if sudo flatpak remote-add --system --if-not-exists flathub \
   https://flathub.org/repo/flathub.flatpakrepo; then
@@ -339,6 +367,18 @@ if [[ -n "${AUR_HELPER:-}" ]]; then
   install_aur "${AUR_PACKAGES[@]}"
 else
   fail "No AUR helper available; skipped AUR packages" aur-packages-skipped
+fi
+
+step "Face unlock (howdy)"
+# howdy-git (Howdy 3) has a native pam_howdy.so; howdy 2.6 needs python2 pam-python.
+if pacman -Q howdy-git >/dev/null 2>&1; then
+  if bash "$SCRIPT_DIR/howdy/setup.sh"; then
+    ok "Face unlock configured"
+  else
+    fail "Face unlock setup (see above)" howdy
+  fi
+else
+  warn "howdy-git not installed; skipping face unlock"
 fi
 
 step "Zsh configuration (bundled manjaro-zsh-config)"

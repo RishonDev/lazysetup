@@ -20,6 +20,12 @@ Post-install setup script for CachyOS/Arch Linux.
   `agents/install.sh` (both scripts): taste-skill (+ classics), imagegen-skills
   (image-to-code), Vercel web-design-guidelines, awesome-design, playwright-cli,
   the `mem` memory skill, and REA (`rea-agents setup`)
+- Laptop AI stack: PyTorch for Intel GPUs (`python-pytorch-opt-xpu`),
+  OpenVINO with GPU/NPU plugins, Ollama Vulkan backend, Hugging Face and
+  data-science libraries, plus a `~/.venvs/ai` venv (accelerate, diffusers,
+  peft, timm, einops) that reuses the system PyTorch
+- Laptop face unlock: `howdy-git` configured for `sudo` and the KDE lock screen
+  by `howdy/setup.sh` (IR camera auto-detected, password stays as fallback)
 - ASUS Vivobook webcam enhancer (camfix), when the ASUS FHD webcam is detected
 - Zsh setup from `zsh/manjaro-zsh-config.zip`, a snapshot of
   [RishonDev/manjaro-zsh-config](https://github.com/RishonDev/manjaro-zsh-config)

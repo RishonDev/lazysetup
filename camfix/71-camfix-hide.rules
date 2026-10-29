@@ -1,4 +1,6 @@
-# Hide the raw ASUS webcam + IR sensor from desktop apps so they pick the
-# camfix virtual camera. Only group camraw (the camfix service) can open them.
+# Hide the raw ASUS webcam from desktop apps so they pick the camfix virtual
+# camera. Only group camraw (the camfix service) can open it.
 # Must sort before 73-seat-late.rules, which grants the logged-in user an ACL.
-SUBSYSTEM=="video4linux|media", ATTRS{idVendor}=="3277", ATTRS{idProduct}=="0018", GROUP="camraw", MODE="0660", TAG-="uaccess"
+# Only USB interface 1.0 (RGB): the IR sensor on 1.2 stays usable by howdy,
+# which runs as the user on the KDE lock screen.
+SUBSYSTEM=="video4linux|media", ATTRS{idVendor}=="3277", ATTRS{idProduct}=="0018", ENV{ID_PATH}=="*:1.0", GROUP="camraw", MODE="0660", TAG-="uaccess"
