@@ -9,6 +9,8 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 LOG="$HOME/cachyos-desktop-setup-$(date +%F-%H%M%S).log"
 FAILED=()
 SKIPPED=()
@@ -223,7 +225,7 @@ fi
 
 section "AUR applications"
 if [[ -n "$AUR" ]]; then
-    for pkg in jetbrains-toolbox android-studio manjaro-zsh-config; do
+    for pkg in jetbrains-toolbox android-studio; do
         if "$AUR" -S --needed "$pkg"; then
             ok "Installed or already present: $pkg"
         else
@@ -232,6 +234,29 @@ if [[ -n "$AUR" ]]; then
     done
 else
     skip "AUR applications; install paru/yay and retry manually"
+fi
+
+section "Zsh configuration (bundled manjaro-zsh-config)"
+# manjaro-zsh-config was removed from the AUR. zsh/manjaro-zsh-config.zip is a
+# snapshot of github.com/RishonDev/manjaro-zsh-config; its install.sh builds
+# the font, powerlevel10k theme and config from their PKGBUILDs, in order.
+install_repo \
+    zsh-autosuggestions zsh-syntax-highlighting \
+    zsh-history-substring-search pkgfile
+if pacman -Q manjaro-zsh-config >/dev/null 2>&1; then
+    ok "manjaro-zsh-config package already installed"
+else
+    tmp="$(mktemp -d)"
+    if bsdtar -xf "$SCRIPT_DIR/zsh/manjaro-zsh-config.zip" -C "$tmp" &&
+        bash "$tmp/install.sh"; then
+        ok "manjaro-zsh-config installed"
+    else
+        fail "manjaro-zsh-config installer"
+    fi
+    rm -rf "$tmp"
+fi
+if [[ ! -e "$HOME/.zshrc" ]]; then
+    cp /etc/skel/.zshrc "$HOME/.zshrc" && ok "Created ~/.zshrc"
 fi
 
 section "Claude Code"
@@ -252,6 +277,14 @@ if command -v codex >/dev/null 2>&1; then
     ok "Codex already installed."
 else
     npm install --global @openai/codex || fail "Codex CLI"
+fi
+
+section "Gemini CLI, agent skills and REA"
+install_repo gemini-cli
+if bash "$SCRIPT_DIR/agents/install.sh"; then
+    ok "Agent skills ready for Claude Code, Codex and Gemini CLI"
+else
+    fail "Agent skills / REA (see above)"
 fi
 
 section "LazyVim"

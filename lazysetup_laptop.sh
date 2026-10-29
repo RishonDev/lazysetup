@@ -83,6 +83,96 @@ install_aur() {
   done
 }
 
+online() {
+  if command -v nmcli >/dev/null 2>&1 &&
+     [[ "$(nmcli -t networking connectivity check 2>/dev/null)" == full ]]; then
+    return 0
+  fi
+  curl -fsI --max-time 5 https://archlinux.org >/dev/null 2>&1
+}
+
+wait_online() {
+  local i
+  for ((i = 0; i < 15; i++)); do
+    online && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# Interactive Wi-Fi picker via NetworkManager. Returns 0 once online.
+wifi_setup() {
+  if ! command -v nmcli >/dev/null 2>&1; then
+    warn "nmcli not found. Connect with 'iwctl' or 'nmtui', then rerun this script."
+    return 1
+  fi
+  systemctl is-active --quiet NetworkManager || sudo systemctl enable --now NetworkManager
+  nmcli radio wifi on 2>/dev/null
+
+  local attempt=0 choice ssid sec sig pw i
+  local -a ssids secs sigs
+  local -A seen
+  # Only failed connections count; rescans and typos do not.
+  while ((attempt < 3)); do
+    info "Scanning for Wi-Fi networks..."
+    ssids=() secs=() sigs=() seen=()
+    # SSID last so names containing ':' survive the split; strongest first, deduped.
+    while IFS=: read -r sig sec ssid; do
+      [[ -z "$ssid" ]] && continue
+      [[ -n "${seen[$ssid]-}" ]] && continue
+      seen[$ssid]=1
+      ssids+=("$ssid") secs+=("$sec") sigs+=("$sig")
+    done < <(nmcli -e no -t -f SIGNAL,SECURITY,SSID device wifi list --rescan yes 2>/dev/null | sort -t: -k1,1nr)
+
+    if ((${#ssids[@]} == 0)); then
+      warn "No networks found."
+    else
+      for i in "${!ssids[@]}"; do
+        printf '  %s%2d)%s %-32s %s%3s%%%s  %s\n' "$BOLD" $((i + 1)) "$RESET" "${ssids[i]}" \
+          "$GREEN" "${sigs[i]}" "$RESET" "${secs[i]:-open}"
+      done
+    fi
+    printf '  %s h)%s hidden network   %s r)%s rescan   %s q)%s quit\n' \
+      "$BOLD" "$RESET" "$BOLD" "$RESET" "$BOLD" "$RESET"
+    read -r -p "${YELLOW}  ?${RESET} Network: " choice || return 1
+
+    case "$choice" in
+      q) return 1 ;;
+      r) continue ;;
+      h)
+        read -r -p "${YELLOW}  ?${RESET} SSID: " ssid || return 1
+        sec=hidden
+        ;;
+      *)
+        if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#ssids[@]})); then
+          ssid="${ssids[choice - 1]}" sec="${secs[choice - 1]}"
+        else
+          warn "Invalid choice"
+          continue
+        fi
+        ;;
+    esac
+
+    local -a cmd=(nmcli device wifi connect "$ssid")
+    [[ "$sec" == hidden ]] && cmd+=(hidden yes)
+    if [[ -n "$sec" && "$sec" != "--" ]]; then
+      # Blank password = use a saved profile for this network.
+      read -r -s -p "${YELLOW}  ?${RESET} Password for $ssid (blank if saved): " pw
+      echo
+      [[ -n "$pw" ]] && cmd+=(password "$pw")
+    fi
+
+    info "Connecting to $ssid..."
+    if "${cmd[@]}" >/dev/null && wait_online; then
+      ok "Connected to $ssid"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    warn "Could not connect to $ssid (attempt $attempt/3)"
+  done
+  return 1
+}
+
 if [[ ! -f /etc/arch-release ]]; then
   echo "${RED}This script is intended for CachyOS/Arch Linux.${RESET}"
   exit 1
@@ -102,6 +192,17 @@ printf '%s%slazysetup%s — CachyOS laptop bootstrap\n' "$BOLD" "$CYAN" "$RESET"
 info "Log file: $LOG"
 info "$TOTAL_STEPS steps. This can install large packages and update your system."
 ask "Continue? [y/N]" || exit 0
+
+step "Network connection"
+if online; then
+  ok "Online"
+else
+  warn "No internet connection. Let's get on Wi-Fi first."
+  wifi_setup || {
+    echo "${RED}No internet connection. Connect, then rerun this script.${RESET}"
+    exit 1
+  }
+fi
 
 step "Update system"
 sudo pacman -Syu || {
@@ -287,6 +388,14 @@ elif sudo pacman -S --needed --noconfirm npm &&
   ok "Codex CLI installed"
 else
   fail "Codex installation" codex-cli
+fi
+
+step "Gemini CLI, agent skills and REA"
+install_repo gemini-cli
+if bash "$SCRIPT_DIR/agents/install.sh"; then
+  ok "Agent skills ready for Claude Code, Codex and Gemini CLI"
+else
+  fail "Agent skills / REA (see above)" agent-skills
 fi
 
 step "LazyVim setup"

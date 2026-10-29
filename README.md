@@ -16,6 +16,10 @@ Post-install setup script for CachyOS/Arch Linux.
 - Claude Code and OpenAI Codex CLI install
 - Optional LazyVim replacement flow
 - Optional Ollama service enablement
+- Gemini CLI, plus agent skills for Claude Code, Codex and Gemini CLI via
+  `agents/install.sh` (both scripts): taste-skill (+ classics), imagegen-skills
+  (image-to-code), Vercel web-design-guidelines, awesome-design, playwright-cli,
+  the `mem` memory skill, and REA (`rea-agents setup`)
 - ASUS Vivobook webcam enhancer (camfix), when the ASUS FHD webcam is detected
 - Zsh setup from `zsh/manjaro-zsh-config.zip`, a snapshot of
   [RishonDev/manjaro-zsh-config](https://github.com/RishonDev/manjaro-zsh-config)
