@@ -16,3 +16,6 @@ export PATH="$HOME/.local/bin:$PATH"
 alias nano=nvim
 alias vim=nvim
 export HOPPER_LAUNCHER_PATH=/opt/hopper-v4/bin/Hopper
+
+# Parallel builds on all CPU threads
+export MAKEFLAGS="-j$(nproc)"
