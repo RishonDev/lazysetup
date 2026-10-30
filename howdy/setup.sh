@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Face unlock with howdy (Howdy 3 / howdy-git, native pam_howdy.so) for sudo
-# and the KDE lock screen. Adapted from
-# https://gist.github.com/pastleo/76597c6ae8f95bb02982fea6df3a3ade and the Arch
-# Wiki Howdy page. The login screen is left alone (SDDM-style greeters freeze on
-# a failed attempt and KWallet would no longer unlock at login). Safe to rerun.
+# the KDE lock screen and the login screen (Plasma Login Manager or SDDM).
+# Adapted from https://gist.github.com/pastleo/76597c6ae8f95bb02982fea6df3a3ade
+# and the Arch Wiki Howdy page. Safe to rerun.
 
 set -u
 CONFIG=/etc/howdy/config.ini
@@ -41,6 +40,21 @@ if [[ -z "$ir_device" ]]; then
 fi
 ok "IR camera: $ir_device"
 
+# camfix/71-camfix-hide.rules restricts the raw cameras to group camraw; the lock
+# screen authenticates as the user, so give the IR sensor back to group video.
+ir_name="$(cat "/sys/class/video4linux/$(basename "$(readlink -f "$ir_device")")/name")"
+if echo "SUBSYSTEM==\"video4linux\", ATTR{name}==\"$ir_name\", GROUP=\"video\", MODE=\"0660\"" |
+     sudo tee /etc/udev/rules.d/72-howdy-ir.rules >/dev/null &&
+   sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=video4linux; then
+  ok "IR camera readable by group video"
+else
+  fail "Writing /etc/udev/rules.d/72-howdy-ir.rules"
+fi
+id -nG | grep -qw video || { sudo usermod -aG video "$USER" && info "Added $USER to group video (log out and back in)"; }
+
+# Howdy 2 used pam_python.so; drop its lines so PAM stops loading a missing module.
+sudo sed -i '/pam_python\.so.*howdy/d' /etc/pam.d/sudo /etc/pam.d/kde 2>/dev/null
+
 info "Configuring $CONFIG"
 if sudo sed -i -E \
   -e "s|^(device_path[[:space:]]*=).*|\1 $ir_device|" \
@@ -67,7 +81,8 @@ fi
 
 # KDE lock screen: kscreenlocker ships /usr/lib/pam.d/kde; /etc/pam.d/kde overrides it.
 kde_base=/etc/pam.d/kde
-[[ -f "$kde_base" ]] || kde_base=/usr/lib/pam.d/kde
+# An override without an account stack is incomplete; rebuild it from the shipped file.
+grep -q '^account' "$kde_base" 2>/dev/null || kde_base=/usr/lib/pam.d/kde
 if [[ ! -f "$kde_base" ]]; then
   info "KDE lock screen PAM file not found; skipped"
 elif grep -q pam_howdy "$kde_base"; then
@@ -77,6 +92,26 @@ elif { echo '#%PAM-1.0'; echo "$PAM_LINE"; grep -v '^#%PAM-1.0' "$kde_base"; } |
   ok "KDE lock screen: face unlock enabled (leave the password empty and press Enter)"
 else
   fail "Writing /etc/pam.d/kde"
+fi
+
+# Login screen: both greeters ship their PAM file in /usr/lib/pam.d; /etc/pam.d overrides it.
+# A face login gives KWallet no password, so it asks for one after login.
+login_svc=""
+for svc in plasmalogin sddm; do
+  [[ -f /usr/lib/pam.d/$svc || -f /etc/pam.d/$svc ]] && { login_svc=$svc; break; }
+done
+login_base=/etc/pam.d/$login_svc
+grep -q '^account' "$login_base" 2>/dev/null || login_base=/usr/lib/pam.d/$login_svc
+if [[ -z "$login_svc" ]]; then
+  info "No Plasma Login Manager or SDDM PAM file found; login screen skipped"
+elif grep -q pam_howdy "$login_base"; then
+  ok "Login screen ($login_svc) already uses howdy"
+elif { echo '#%PAM-1.0'; echo "$PAM_LINE"; grep -v '^#%PAM-1.0' "$login_base"; } |
+     sudo tee "/etc/pam.d/$login_svc.new" >/dev/null &&
+     sudo mv "/etc/pam.d/$login_svc.new" "/etc/pam.d/$login_svc"; then
+  ok "Login screen ($login_svc): face login enabled (leave the password empty and press Enter)"
+else
+  fail "Writing /etc/pam.d/$login_svc"
 fi
 
 # The lock screen authenticates as the user, so howdy's files must be readable.
@@ -100,4 +135,4 @@ if ((${#FAILED[@]})); then
   printf '   - %s\n' "${FAILED[@]}"
   exit 1
 fi
-ok "Face unlock ready for sudo and the lock screen (log out and back in once)"
+ok "Face unlock ready for sudo, the lock screen and the login screen (log out and back in once)"

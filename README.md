@@ -25,7 +25,7 @@ Post-install setup script for CachyOS/Arch Linux.
   OpenVINO with GPU/NPU plugins, Ollama Vulkan backend, Hugging Face and
   data-science libraries, plus a `~/.venvs/ai` venv (accelerate, diffusers,
   peft, timm, einops) that reuses the system PyTorch
-- Laptop face unlock: `howdy-git` configured for `sudo` and the KDE lock screen
+- Laptop face unlock: `howdy-git` configured for `sudo`, the KDE lock screen and the login screen (Plasma Login Manager or SDDM)
   by `howdy/setup.sh` (IR camera auto-detected, password stays as fallback)
 - ASUS Vivobook webcam enhancer (camfix), when the ASUS FHD webcam is detected
 - Zsh setup from `zsh/manjaro-zsh-config.zip`, a snapshot of
